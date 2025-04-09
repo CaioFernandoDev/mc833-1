@@ -14,6 +14,8 @@ void *handle_client(void *arg)
         if (bytes <= 0)
             break;
 
+        printf("Received buffer from client (%d): %s\n", client_sock, buffer);
+
         char *cmd = strtok(buffer, "|\n");
         char response[BUFFER_SIZE * 2] = {0};
 
@@ -95,6 +97,8 @@ void *handle_client(void *arg)
             strcpy(response, "Invalid command.\n");
         }
 
+        printf("Sending response to client (%d)\n", client_sock);
+
         send(client_sock, response, strlen(response), 0);
     }
 
@@ -113,14 +117,15 @@ int main()
     pthread_t thread_id;
 
     sock_fd = socket(AF_INET, SOCK_STREAM, 0);
-    setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
+    setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)); // Allowing the socket to reuse the port even if it's in use
 
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
     server_addr.sin_port = htons(PORT);
 
     bind(sock_fd, (struct sockaddr *)&server_addr, sizeof(server_addr));
-    listen(sock_fd, 5);
+    listen(sock_fd, MAX_CONNECTIONS);
+
     printf("Server listening on port %d...\n", PORT);
 
     while (1)

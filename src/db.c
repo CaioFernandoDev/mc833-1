@@ -1,11 +1,16 @@
 #include "server.h"
 #include "db.h"
 
-Movie db[MAX_MOVIES];
+/*
+Tivemos problemas pra manipular o arquivo JSON em C, e não queríamos usar uma lib externa pra isso.
+Então decidimos fazer um DB em memória pra facilitar a manipulação, e depois sincronizamos com o JSON.
+A ideia é que o DB em memória seja sempre atualizado, e o JSON só seja atualizado quando necessário.
+Usamos mutexes pra garantir que não haja concorrência entre as threads.
+*/
+Movie LOCAL_DB[MAX_MOVIES];
+
 int movie_count = 0;
 pthread_mutex_t db_mutex = PTHREAD_MUTEX_INITIALIZER;
-
-#define DB_FILE "movies.json"
 
 // Generate a random unique ID
 int generate_unique_id()
@@ -18,17 +23,17 @@ int generate_unique_id()
         unique = 1;
         for (int i = 0; i < movie_count; i++)
         {
-            if (db[i].id == id)
+            if (LOCAL_DB[i].id == id)
             {
                 unique = 0;
                 break;
             }
         }
-    } while (!unique);
+    } while (!unique && id != 0);
     return id;
 }
 
-// Save DB to JSON
+// Save LOCAL_DB to JSON
 void save_db()
 {
     FILE *file = fopen(DB_FILE, "w");
@@ -38,7 +43,7 @@ void save_db()
     fprintf(file, "[\n");
     for (int i = 0; i < movie_count; i++)
     {
-        Movie *m = &db[i];
+        Movie *m = &LOCAL_DB[i];
         fprintf(file, "  {\n");
         fprintf(file, "    \"id\": %d,\n", m->id);
         fprintf(file, "    \"title\": \"%s\",\n", m->title);
@@ -55,7 +60,7 @@ void save_db()
     fclose(file);
 }
 
-// Load DB from JSON
+// Load JSON file into LOCAL_DB
 void load_db()
 {
     FILE *file = fopen(DB_FILE, "r");
@@ -93,7 +98,7 @@ void load_db()
         }
         else if (strchr(line, '}'))
         {
-            db[movie_count++] = temp;
+            LOCAL_DB[movie_count++] = temp;
             memset(&temp, 0, sizeof(Movie));
         }
     }
@@ -104,14 +109,15 @@ void load_db()
 Movie *find_movie_by_id(int id)
 {
     for (int i = 0; i < movie_count; i++)
-        if (db[i].id == id)
-            return &db[i];
+        if (LOCAL_DB[i].id == id)
+            return &LOCAL_DB[i];
     return NULL;
 }
 
 void register_movie(char *title, char *director, int year, char *genre_str, char *response)
 {
     pthread_mutex_lock(&db_mutex);
+    load_db();
 
     if (movie_count >= MAX_MOVIES)
     {
@@ -120,7 +126,7 @@ void register_movie(char *title, char *director, int year, char *genre_str, char
         return;
     }
 
-    Movie *m = &db[movie_count++];
+    Movie *m = &LOCAL_DB[movie_count++];
     m->id = generate_unique_id();
     strncpy(m->title, title, 99);
     strncpy(m->director, director, 99);
@@ -144,6 +150,7 @@ void register_movie(char *title, char *director, int year, char *genre_str, char
 void add_genre(int id, char *genre, char *response)
 {
     pthread_mutex_lock(&db_mutex);
+    load_db();
 
     Movie *m = find_movie_by_id(id);
     if (!m)
@@ -156,7 +163,7 @@ void add_genre(int id, char *genre, char *response)
     }
     else
     {
-        strncpy(m->genres[m->genre_count++], genre, 29);
+        strncpy(m->genres[m->genre_count++], genre, 49);
         save_db();
         sprintf(response, "Genre added.\n");
     }
@@ -167,13 +174,14 @@ void add_genre(int id, char *genre, char *response)
 void remove_movie(int id, char *response)
 {
     pthread_mutex_lock(&db_mutex);
+    load_db();
 
     int found = 0;
     for (int i = 0; i < movie_count; i++)
     {
-        if (db[i].id == id)
+        if (LOCAL_DB[i].id == id)
         {
-            db[i] = db[movie_count - 1];
+            LOCAL_DB[i] = LOCAL_DB[movie_count - 1];
             movie_count--;
             found = 1;
             break;
@@ -195,6 +203,7 @@ void remove_movie(int id, char *response)
 void list_titles(char *response)
 {
     pthread_mutex_lock(&db_mutex);
+    load_db();
 
     response[0] = '\0';
     strcat(response, "ID \t\t Title\n");
@@ -202,7 +211,7 @@ void list_titles(char *response)
     for (int i = 0; i < movie_count; i++)
     {
         char line[150];
-        sprintf(line, "%d \t %s\n", db[i].id, db[i].title);
+        sprintf(line, "%d \t %s\n", LOCAL_DB[i].id, LOCAL_DB[i].title);
         strcat(response, line);
     }
     if (movie_count == 0)
@@ -214,17 +223,18 @@ void list_titles(char *response)
 void list_all_movies(char *response)
 {
     pthread_mutex_lock(&db_mutex);
+    load_db();
 
     response[0] = '\0';
     for (int i = 0; i < movie_count; i++)
     {
         char line[300] = {0};
         sprintf(line, "ID: %d\nTitle: %s\nDirector: %s\nYear: %d\nGenres: ",
-                db[i].id, db[i].title, db[i].director, db[i].year);
-        for (int j = 0; j < db[i].genre_count; j++)
+                LOCAL_DB[i].id, LOCAL_DB[i].title, LOCAL_DB[i].director, LOCAL_DB[i].year);
+        for (int j = 0; j < LOCAL_DB[i].genre_count; j++)
         {
-            strcat(line, db[i].genres[j]);
-            if (j < db[i].genre_count - 1)
+            strcat(line, LOCAL_DB[i].genres[j]);
+            if (j < LOCAL_DB[i].genre_count - 1)
                 strcat(line, ", ");
         }
         strcat(line, "\n\n");
@@ -239,6 +249,7 @@ void list_all_movies(char *response)
 void get_movie(int id, char *response)
 {
     pthread_mutex_lock(&db_mutex);
+    load_db();
 
     Movie *m = find_movie_by_id(id);
     if (!m)
@@ -264,16 +275,17 @@ void get_movie(int id, char *response)
 void filter_by_genre(char *genre, char *response)
 {
     pthread_mutex_lock(&db_mutex);
+    load_db();
 
     response[0] = '\0';
     for (int i = 0; i < movie_count; i++)
     {
-        for (int j = 0; j < db[i].genre_count; j++)
+        for (int j = 0; j < LOCAL_DB[i].genre_count; j++)
         {
-            if (strcmp(db[i].genres[j], genre) == 0)
+            if (strcmp(LOCAL_DB[i].genres[j], genre) == 0)
             {
                 char line[150];
-                sprintf(line, "%d: %s\n", db[i].id, db[i].title);
+                sprintf(line, "%d: %s\n", LOCAL_DB[i].id, LOCAL_DB[i].title);
                 strcat(response, line);
                 break;
             }

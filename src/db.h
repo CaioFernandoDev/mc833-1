@@ -4,6 +4,7 @@
 #define BUFFER_LEN 1024
 #define MAX_MOVIES 100
 #define MAX_GENRES 5
+#define DB_FILE "movies.json"
 
 typedef struct
 {
