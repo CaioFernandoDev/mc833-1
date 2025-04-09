@@ -15,13 +15,13 @@ make
 Para executar o servidor, basta executar o comando em um terminal:
 
 ```bash
-bin/servidor
+bin/server
 ```
 
 Para executar o cliente, basta executar o comando em um novo terminal:
 
 ```bash
-bin/cliente
+bin/client
 ```
 
 ## Definição do IP
