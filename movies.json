@@ -12,5 +12,12 @@
     "director": "Quentin Tarantino",
     "year": 1995,
     "genres": ["Drug Crime", "Gangster", "Crime", "Drama", "Dark Comedy"]
+  },
+  {
+    "id": 1527504657,
+    "title": "Jogos Vorazes",
+    "director": "Francis Lawrence",
+    "year": 2015,
+    "genres": ["Action", "Adventure", "Science Fiction"]
   }
 ]
